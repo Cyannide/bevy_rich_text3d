@@ -12,6 +12,17 @@ use rustc_hash::FxHashMap;
 
 use crate::styling::GlyphEntry;
 
+#[cfg(feature = "3d")]
+use bevy::pbr::StandardMaterial;
+#[cfg(feature = "2d")]
+use bevy::sprite_render::ColorMaterial;
+#[cfg(any(feature = "2d", feature = "3d"))]
+use bevy::{
+    asset::AssetId,
+    ecs::system::{Local, Res, ResMut},
+    math::UVec2,
+};
+
 #[cfg(feature = "reflect")]
 use bevy::{ecs::reflect::ReflectComponent, reflect::Reflect};
 
@@ -130,6 +141,47 @@ impl TextAtlas {
                 chunk[3] = 0;
             }
         }
+    }
+}
+
+/// Touches every material when an atlas image changes size.
+///
+/// A material's bind group is only rebuilt when the material itself changes, so
+/// a resized atlas image, grown by [`TextAtlas::allocate`] while rendering or
+/// drained from an asynchronous prepare task, leaves existing materials sampling
+/// the old texture for good. `Assets::iter_mut` marks every asset modified;
+/// `Assets::get_mut` alone does not, since it only flags on `DerefMut`.
+#[cfg(any(feature = "2d", feature = "3d"))]
+pub(crate) fn touch_materials_on_atlas_resize(
+    atlases: Res<Assets<TextAtlas>>,
+    images: Res<Assets<Image>>,
+    mut sizes: Local<FxHashMap<AssetId<Image>, UVec2>>,
+    #[cfg(feature = "3d")] standard_materials: Option<ResMut<Assets<StandardMaterial>>>,
+    #[cfg(feature = "2d")] color_materials: Option<ResMut<Assets<ColorMaterial>>>,
+) {
+    let mut resized = false;
+    for (_, atlas) in atlases.iter() {
+        let Some(image) = images.get(atlas.image.id()) else {
+            continue;
+        };
+        let size = image.size();
+        if sizes
+            .insert(atlas.image.id(), size)
+            .is_some_and(|old| old != size)
+        {
+            resized = true;
+        }
+    }
+    if !resized {
+        return;
+    }
+    #[cfg(feature = "3d")]
+    if let Some(mut materials) = standard_materials {
+        for _ in materials.iter_mut() {}
+    }
+    #[cfg(feature = "2d")]
+    if let Some(mut materials) = color_materials {
+        for _ in materials.iter_mut() {}
     }
 }
 

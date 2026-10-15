@@ -249,6 +249,13 @@ impl Plugin for Text3dPlugin {
                 .run_if(resource_exists::<TextRenderer>)
                 .in_set(Text3dSet),
         );
+        #[cfg(any(feature = "2d", feature = "3d"))]
+        app.add_systems(
+            PostUpdate,
+            atlas::touch_materials_on_atlas_resize
+                .after(render::text_render)
+                .in_set(Text3dSet),
+        );
         app.configure_sets(PostUpdate, Text3dSet.before(TransformSystems::Propagate));
 
         #[cfg(feature = "reflect")]
